@@ -208,7 +208,8 @@ function get_cluster_iam() {
   EXEC_COMMAND=$(kubectl config view --minify -ojsonpath='{.users[0].user.exec.command}' | sed 's/.*\///')
   EXEC_ARGS=$(kubectl config view --minify -ojsonpath='{.users[0].user.exec.args}')
   log "Collecting CLUSTER_NAME & IAM_ARN information"
-  if [[ ! $(kubectl config view --minify -ojsonpath='{.users[0].user.exec.env}') == '<nil>' ]]; then
+  EXEC_ENV=$(kubectl config view --minify -ojsonpath='{.users[0].user.exec.env}')
+  if [[ "${EXEC_ENV}" != '<nil>' && "${EXEC_ENV}" != 'null' && -n "${EXEC_ENV}" ]]; then
     log "Identifying if AWS_PROFILE is used in EXEC configuration"
     PROFILE=$(kubectl config view --minify -ojsonpath='{.users[0].user.exec.env[?(@.name=="AWS_PROFILE")].value}')
   fi
@@ -265,11 +266,13 @@ function get_cluster_info() {
   OUTPUT_DIR="$PWD/${OUTPUT_DIR_NAME}"
   mkdir "${OUTPUT_DIR}"
   print "Collecting information in directory: \"${OUTPUT_DIR_NAME}\""
-  log -p "Collecting additional Cluster infromation"
+  log -p "Collecting additional Cluster information"
   local CLUSTER_INFO_FILE
   CLUSTER_INFO_FILE=$(get_filename "Cluster_Info" "json")
-  local CLUSTER_INFO
-  CLUSTER_INFO=$(kubectl config view --minify -ojsonpath='{.clusters[0]}')
+  local API_SERVER_END_POINT
+  API_SERVER_END_POINT=$(kubectl config view --minify -ojsonpath='{.clusters[0].cluster.server}')
+  local CLUSTER_ARN
+  CLUSTER_ARN=$(kubectl config view --minify -ojsonpath='{.clusters[0].name}')
   local VERSION
   log -p "Collecting version"
   VERSION=$(kubectl version --short 2> /dev/null)
@@ -281,7 +284,7 @@ function get_cluster_info() {
   local KUBECTL_VERSION
   KUBECTL_VERSION=$(echo "$VERSION" | sed -nE 's/.*Client Version: v([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
   local CLUSTER_INFO
-  CLUSTER_INFO=${CLUSTER_INFO%?}",\"serverVersion\": \"${CLUSTER_VERSION}\", \"clientVersion\": \"${KUBECTL_VERSION}\",\"iamARN\": \"${IAM_ARN}\"}"
+  CLUSTER_INFO="{\"name\": \"${CLUSTER_ARN}\", \"cluster\": {\"server\": \"${API_SERVER_END_POINT}\"},\"serverVersion\": \"${CLUSTER_VERSION}\", \"clientVersion\": \"${KUBECTL_VERSION}\",\"iamARN\": \"${IAM_ARN}\"}"
   echo "${CLUSTER_INFO}" > "${CLUSTER_INFO_FILE}"
   unset CLUSTER_NAME
   unset IAM_ARN
@@ -294,6 +297,9 @@ function get_default_resources() {
   log -p "Collecting Default resources in KUBE-SYSTEM namespace"
   log "Collecting KUBE-SYSTEM configMaps"
   for resource in "${KUBE_SYSTEM_CM[@]}"; do
+    if [[ "${resource}" == "aws-auth" && ! $(kubectl get configmap aws-auth -n kube-system 2> /dev/null) ]]; then
+      continue
+    fi
     get_object "configmap" "${resource}" "kube-system"
   done
 
