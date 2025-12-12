@@ -18,6 +18,36 @@ KUBE_SYSTEM_DS_DEP=(
   coredns
 )
 
+# Kubernetes objects
+K8S_OBJECTS=(
+  cronjobs
+  cninode
+  daemonsets
+  deployments
+  ec2nodeclasses
+  endpoints
+  endpointslices
+  horizontalpodautoscalers
+  ingressclasses
+  ingresses
+  jobs
+  namespaces
+  nodeclasses
+  nodeclaims
+  nodediagnostics
+  nodepools
+  nodes
+  persistentvolumeclaims
+  persistentvolumes
+  poddisruptionbudgets
+  pods
+  replicasets
+  serviceaccounts
+  services
+  statefulsets
+  storageclasses
+)
+
 #Helper Functions
 
 colorClear='\033[0m'
@@ -65,14 +95,19 @@ function prompt() {
 }
 
 function help() {
-  print "\nUsage: ./$(basename "${0}") -p <Podname> -n <Namespace of the pod> -s [Service Name] -i [Ingress Name] "
-  print "\nRequired:"
-  print "  -p, --podname \tPod name \t(Required)"
-  print "  -n, --namespace \tPod Namespace \t(Required)"
-  print "\nOPTIONAL:"
-  print "  -s, --service \tService name associated with the Pod"
-  print "  -i, --ingress \tIngress name associated with the Pod"
-  print "  -h, --help \t\tShow Help menu"
+  print "\n To collect specific pod information."
+  print "\n    Usage: bash $(basename "${0}") -p <Podname> -n <Namespace of the pod> -s [Service Name] -i [Ingress Name] "
+  print "\n    Required:"
+  print "      -p, --podname \tPod name \t(Required)"
+  print "      -n, --namespace \tPod Namespace \t(Required)"
+  print "\n    OPTIONAL:"
+  print "      -s, --service \tService name associated with the Pod"
+  print "      -i, --ingress \tIngress name associated with the Pod"
+  print "      -h, --help \t\tShow Help menu"
+  print "\n To collect general overall kubernetes information."
+  print "\n    Usage: bash $(basename "${0}") -a"
+  print "\n    Required:"
+  print "      -a, --all"
 }
 
 function get_filename() {
@@ -109,39 +144,52 @@ function get_object() {
 }
 
 # Parse Input Parameters
-while [[ $# -gt 0 ]]; do
-  key="$1"
-  case $key in
-    -h | --help)
-      help && exit 0
-      ;;
-    -p | --podname)
-      POD_NAME=$2
-      shift
-      shift
-      ;;
-    -n | --namespace)
-      NAMESPACE=$2
-      shift
-      shift
-      ;;
-    -s | --service)
-      SERVICE_NAME=$2
-      shift
-      shift
-      ;;
-    -i | --ingress)
-      INGRESS_NAME=$2
-      shift
-      shift
-      ;;
-    *)
-      help && exit 1
-      shift
-      shift
-      ;;
-  esac
-done
+if [[ $# -eq 0 ]]; then
+  help && exit 1
+elif [[ "$1" == "-a" ]]; then
+  if [ $# -ne 1 ]; then
+    print "[ERROR] -a option must be used alone"
+    help && exit 1
+  fi
+  TYPE="ALL"
+elif [[ "$*" == *" -a"* ]]; then
+  print "[ERROR] -a option must be the first and only option"
+  help && exit 1
+else
+  while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+      -h | --help)
+        help && exit 0
+        ;;
+      -p | --podname)
+        POD_NAME=$2
+        shift
+        shift
+        ;;
+      -n | --namespace)
+        NAMESPACE=$2
+        shift
+        shift
+        ;;
+      -s | --service)
+        SERVICE_NAME=$2
+        shift
+        shift
+        ;;
+      -i | --ingress)
+        INGRESS_NAME=$2
+        shift
+        shift
+        ;;
+      *)
+        help && exit 1
+        shift
+        shift
+        ;;
+    esac
+  done
+fi
 
 # Main functions
 #Verify KUBECTL command installation
@@ -158,8 +206,10 @@ function check_Kubectl() {
 }
 
 function check_permissions() {
-  if [[ $(kubectl auth can-i 'list' '*' -A 2> /dev/null) == 'no' || $(kubectl auth can-i 'get' '*' -A 2> /dev/null) == 'no' ]]; then
-    error "Please make sure you have Read (get,list) permission for the EKS cluster!!"
+  if [[ $(kubectl auth can-i 'list' '*' -A 2> /dev/null) == 'no' \
+     || $(kubectl auth can-i 'get' '*' -A 2> /dev/null) == 'no' \
+     || $(kubectl auth can-i 'describe' '*' -A 2> /dev/null) == 'no' ]]; then
+    error "Please make sure you have Read (get,list,describe) permission for the EKS cluster!!"
   fi
 }
 
@@ -318,6 +368,39 @@ function get_default_resources() {
   STORAGE_CLASSES_FILE=$(get_filename "Storage_Classes" "json")
   log "Collecting StorageClasses"
   kubectl get sc -ojsonpath='{.items}' > "${STORAGE_CLASSES_FILE}"
+}
+
+# All objects list
+function get_all_objects_list() {
+  OUTPUT_DIR="${OUTPUT_DIR_NAME}/k8s_info"
+  mkdir -p "$OUTPUT_DIR"
+  log -p "Collecting all objects list"
+  local ALL_OBJECTS_LIST_FILE=$(get_filename "all_objects_list" "txt")
+  for i in $(kubectl api-resources --verbs=list -o name | grep -v events | sort | tr "\n" " "); do
+    echo -e "\n---------- $i ----------\n" >> "${ALL_OBJECTS_LIST_FILE}" 2>&1
+    kubectl get "$i" -o wide -A >> "${ALL_OBJECTS_LIST_FILE}" 2>&1
+  done
+}
+
+# Specific objects details
+function get_specific_objects_details() {
+  OUTPUT_DIR="${OUTPUT_DIR_NAME}/k8s_info"
+  mkdir -p "$OUTPUT_DIR"
+  log -p "Collecting specific objects details"
+  local SPECIFIT_OBJECTS_DETAILS_FILE=$(get_filename "specific_objects_details" "txt")
+  for i in "${K8S_OBJECTS[@]}"; do
+    echo -e "\n---------- $i ----------\n" >> "${SPECIFIT_OBJECTS_DETAILS_FILE}" 2>&1
+    kubectl describe "$i" -A >> "${SPECIFIT_OBJECTS_DETAILS_FILE}" 2>&1
+  done
+}
+
+# Events
+function get_events() {
+  OUTPUT_DIR="${OUTPUT_DIR_NAME}/k8s_info"
+  mkdir -p "$OUTPUT_DIR"
+  log -p "Collecting events"
+  local EVENTS_FILE=$(get_filename "events" "txt")
+  kubectl get events --sort-by=.metadata.creationTimestamp -o wide -A >> "${EVENTS_FILE}" 2>&1
 }
 
 function get_pod() {
@@ -504,22 +587,31 @@ function get_karpenter() {
 }
 
 function finalize() {
-  prompt "Please type \"Yes\" and press ENTER if you want to archive the collected information, To Skip just press ENTER"
-  read -t 30 -rep $'Do you want to create a Tarball of the collected information?\n>' CREATE_TAR
-  CREATE_TAR=$(echo "$CREATE_TAR" | tr '[:upper:]' '[:lower:]')
-  if [[ ${CREATE_TAR} == 'yes' || ${CREATE_TAR} = 'y' ]]; then
-    log "User entered \"${CREATE_TAR}\" for tarballing the collected information"
-    log -p "Archiving collected information"
-    cp "${LOG_FILE}" "./${OUTPUT_DIR_NAME}" && rm -rf "${LOG_FILE}"
-    LOG_FILE="${OUTPUT_DIR_NAME}/${LOG_FILE}"
-    tar -czf "./${OUTPUT_DIR_NAME}.tar.gz" "./${OUTPUT_DIR_NAME}/"
-    print "\n\t${colorDone}Done!! Archived information is located in \"./${OUTPUT_DIR_NAME}.tar.gz\"${colorClear}"
-    print "\n\t${colorDone}Check the execution logs in file ./${LOG_FILE}!!\"${colorClear}"
+  if [[ "${TYPE}" == "ALL" ]]; then
+      log -p "Archiving collected information"
+      cp "${LOG_FILE}" "./${OUTPUT_DIR_NAME}" && rm -rf "${LOG_FILE}"
+      tar -czf "./${OUTPUT_DIR_NAME}.tar.gz" "./${OUTPUT_DIR_NAME}/" > /dev/null 2>&1
+      print "\n\t${colorDone}Done!! Archived information is located in \"./${OUTPUT_DIR_NAME}.tar.gz\"${colorClear}"
+      rm -rf "${OUTPUT_DIR_NAME}"
 
   else
-    log -p "Skipped archiving collected information"
-    print "Check script executionlogs in file ./${LOG_FILE}!!"
-    print "\n\t${colorDone}Done!!! \n\tPlease run \"tar -czf ./${OUTPUT_DIR_NAME}.tar.gz ./${OUTPUT_DIR_NAME}/*\" \n\tto create archived file in current directory!!${colorClear}"
+    prompt "Please type \"Yes\" and press ENTER if you want to archive the collected information, To Skip just press ENTER"
+    read -t 30 -rep $'Do you want to create a Tarball of the collected information?\n>' CREATE_TAR
+    CREATE_TAR=$(echo "$CREATE_TAR" | tr '[:upper:]' '[:lower:]')
+    if [[ ${CREATE_TAR} == 'yes' || ${CREATE_TAR} = 'y' ]]; then
+      log "User entered \"${CREATE_TAR}\" for tarballing the collected information"
+      log -p "Archiving collected information"
+      cp "${LOG_FILE}" "./${OUTPUT_DIR_NAME}" && rm -rf "${LOG_FILE}"
+      LOG_FILE="${OUTPUT_DIR_NAME}/${LOG_FILE}"
+      tar -czf "./${OUTPUT_DIR_NAME}.tar.gz" "./${OUTPUT_DIR_NAME}/"
+      print "\n\t${colorDone}Done!! Archived information is located in \"./${OUTPUT_DIR_NAME}.tar.gz\"${colorClear}"
+      print "\n\t${colorDone}Check the execution logs in file ./${LOG_FILE}!!\"${colorClear}"
+
+    else
+      log -p "Skipped archiving collected information"
+      print "Check script executionlogs in file ./${LOG_FILE}!!"
+      print "\n\t${colorDone}Done!!! \n\tPlease run \"tar -czf ./${OUTPUT_DIR_NAME}.tar.gz ./${OUTPUT_DIR_NAME}/*\" \n\tto create archived file in current directory!!${colorClear}"
+    fi
   fi
 }
 
@@ -530,15 +622,24 @@ log -p "Script execution started"
 trap 'error "Recieved SIGINT cleaning up & terminating"' SIGINT
 check_Kubectl
 check_permissions
-validate_args
 get_cluster_iam
 get_cluster_info
-get_default_resources
-get_karpenter
 
-if [[ ${VALID_INPUTS} == 'VALID' ]]; then # Collect resources for User Desired POD and Namespace
-  get_pod
-  get_svc_ingress
-  get_volumes
-  finalize
+if [[ "${TYPE}" == "ALL" ]]; then
+  get_all_objects_list
+  get_specific_objects_details
+  get_events
+
+else
+  validate_args
+  get_default_resources
+  get_karpenter
+
+  if [[ ${VALID_INPUTS} == 'VALID' ]]; then # Collect resources for User Desired POD and Namespace
+    get_pod
+    get_svc_ingress
+    get_volumes
+  fi
 fi
+
+finalize
