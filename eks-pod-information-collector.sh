@@ -375,7 +375,8 @@ function get_all_objects_list() {
   OUTPUT_DIR="${OUTPUT_DIR_NAME}/k8s_info"
   mkdir -p "$OUTPUT_DIR"
   log -p "Collecting all objects list"
-  local ALL_OBJECTS_LIST_FILE=$(get_filename "all_objects_list" "txt")
+  local ALL_OBJECTS_LIST_FILE
+  ALL_OBJECTS_LIST_FILE=$(get_filename "all_objects_list" "txt")
   for i in $(kubectl api-resources --verbs=list -o name | grep -v events | sort | tr "\n" " "); do
     echo -e "\n---------- $i ----------\n" >> "${ALL_OBJECTS_LIST_FILE}" 2>&1
     kubectl get "$i" -o wide -A >> "${ALL_OBJECTS_LIST_FILE}" 2>&1
@@ -387,7 +388,8 @@ function get_specific_objects_details() {
   OUTPUT_DIR="${OUTPUT_DIR_NAME}/k8s_info"
   mkdir -p "$OUTPUT_DIR"
   log -p "Collecting specific objects details"
-  local SPECIFIT_OBJECTS_DETAILS_FILE=$(get_filename "specific_objects_details" "txt")
+  local SPECIFIT_OBJECTS_DETAILS_FILE
+  SPECIFIT_OBJECTS_DETAILS_FILE=$(get_filename "specific_objects_details" "txt")
   for i in "${K8S_OBJECTS[@]}"; do
     echo -e "\n---------- $i ----------\n" >> "${SPECIFIT_OBJECTS_DETAILS_FILE}" 2>&1
     kubectl describe "$i" -A >> "${SPECIFIT_OBJECTS_DETAILS_FILE}" 2>&1
@@ -399,7 +401,8 @@ function get_events() {
   OUTPUT_DIR="${OUTPUT_DIR_NAME}/k8s_info"
   mkdir -p "$OUTPUT_DIR"
   log -p "Collecting events"
-  local EVENTS_FILE=$(get_filename "events" "txt")
+  local EVENTS_FILE
+  EVENTS_FILE=$(get_filename "events" "txt")
   kubectl get events --sort-by=.metadata.creationTimestamp -o wide -A >> "${EVENTS_FILE}" 2>&1
 }
 
